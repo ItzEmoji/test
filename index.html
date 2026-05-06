@@ -1,0 +1,90 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Public Keys</title>
+  <style>
+    :root {
+      --bg:      #ffffff; --surface: #fafafa; --border: #e5e5e5;
+      --text:    #111111; --muted:   #555555; --faint:  #888888;
+      --code-bg: #f5f5f5; --btn-bg:  #ffffff; --btn-hover: #f0f0f0;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:      #0f0f0f; --surface: #1a1a1a; --border: #2e2e2e;
+        --text:    #e8e8e8; --muted:   #aaaaaa; --faint:  #666666;
+        --code-bg: #1e1e1e; --btn-bg:  #1e1e1e; --btn-hover: #2a2a2a;
+      }
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body  { font-family: system-ui; max-width: 740px; margin: auto;
+            padding: 2rem; background: var(--bg); color: var(--text); }
+    code  { background: var(--code-bg); padding: 2px 6px; border-radius: 6px;
+            color: var(--text); }
+    .subtitle { color: var(--muted); margin-bottom: 1.5em; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1.5rem; }
+    th, td { text-align: left; padding: .55rem .8rem;
+             border-bottom: 1px solid var(--border); }
+    th    { background: var(--surface); font-size: .85rem; color: var(--muted); }
+    .name { font-weight: 600; }
+    .mail { color: var(--muted); font-size: .9rem; }
+    .fp   { font-family: monospace; font-size: .78rem; color: var(--faint); }
+    a.btn { display: inline-block; padding: 2px 10px; border-radius: 5px;
+            border: 1px solid var(--border); font-size: .82rem;
+            text-decoration: none; color: var(--text);
+            background: var(--btn-bg); margin-right: 4px; }
+    a.btn:hover { background: var(--btn-hover); }
+    hr { border: none; border-top: 1px solid var(--border); margin-top: 2rem; }
+    .footer { color: var(--faint); font-size: .9em; margin-top: .8rem; }
+    .footer a { color: var(--faint); }
+  </style>
+</head>
+<body>
+<h1>🔑 Public Keys</h1>
+<p class="subtitle">
+  Automatically retrievable via WKD:<br>
+  <code>gpg --locate-keys &lt;email&gt;@itzemoji.com</code>
+</p>
+<table>
+  <thead>
+    <tr>
+      <th>Name / E-Mail</th>
+      <th>Key ID</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+      <tr>
+        <td>
+          <span class="name">Cyril Dettling</span><br>
+          <span class="mail"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="315c50585d7158454b545c5e5b581f525e5c">[email&#160;protected]</a></span><br>
+          <span class="fp">3E25945635F48F206775861AAC67B758CDCE1F80</span>
+        </td>
+        <td><code>AC67B758CDCE1F80</code></td>
+        <td>
+          <a class="btn" href="/keys/mail@itzemoji.com.asc" download="mail@itzemoji.com.asc">⬇ Download</a>
+          <a class="btn" href="/keys/mail@itzemoji.com.html" target="_blank">raw</a>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <span class="name">Cyril Dettling</span><br>
+          <span class="mail"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="8ce2e3a1fee9fce0f5cce5f8f6e9e1e3e6e5a2efe3e1">[email&#160;protected]</a></span><br>
+          <span class="fp">0BBF82C7DD69E57B5BF688DB2B69366CC04B4ED3</span>
+        </td>
+        <td><code>2B69366CC04B4ED3</code></td>
+        <td>
+          <a class="btn" href="/keys/no-reply@itzemoji.com.asc" download="no-reply@itzemoji.com.asc">⬇ Download</a>
+          <a class="btn" href="/keys/no-reply@itzemoji.com.html" target="_blank">raw</a>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <hr>
+  <p class="footer">
+    Made by <a href="https://github.com/ItzEmoji" target="_blank">ItzEmoji®</a>
+  </p>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9f7893f0deea0e75',t:'MTc3ODA3NjcyNQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"21f0e10ca9964d3aa4b02e60996f9f84","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
