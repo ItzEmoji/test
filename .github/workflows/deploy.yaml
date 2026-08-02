@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
+      - run: cd website && bun install --frozen-lockfile
       # Docusaurus needs baseUrl at build time or every asset URL is wrong.
       - run: bun run build
         env:
