@@ -19,8 +19,8 @@ jobs:
       - uses: actions/create-github-app-token@v2
         id: app-token
         with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          client-id: ${{ secrets.DOCS_APP_ID }}
+          private-key: ${{ secrets.DOCS_APP_KEY }}
           owner: ItzEmoji
           # If this repo is private the submodule clone below authenticates
           # with the same token, so it has to be listed here as well.
