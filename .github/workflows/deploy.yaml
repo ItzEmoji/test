@@ -1,0 +1,30 @@
+# .github/workflows/notify-docs.yml
+name: Notify docs monorepo
+on:
+  push:
+    branches: [main]
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: token
+        with:
+          app-id: ${{ vars.DOCS_APP_ID }}
+          private-key: ${{ secrets.DOCS_APP_KEY }}
+          owner: my-org
+          repositories: monodocs
+
+      - env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          gh api repos/itzemoji/docs-test --input - <<EOF
+          {
+            "event_type": "submodule-updated",
+            "client_payload": {
+              "repo": "${{ github.event.repository.name }}",
+              "sha": "${{ github.sha }}"
+            }
+          }
+          EOF
