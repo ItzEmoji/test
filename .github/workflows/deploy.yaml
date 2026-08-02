@@ -21,12 +21,3 @@ jobs:
         run: |
           gh api user --jq .login || echo "installation token (no user)"
           gh api repos/itzemoji/docs-test --jq .permissions
-          gh api repos/itzemoji/docs-test --input - <<EOF
-          {
-            "event_type": "submodule-updated",
-            "client_payload": {
-              "repo": "${{ github.event.repository.name }}",
-              "sha": "${{ github.sha }}"
-            }
-          }
-          EOF
