@@ -22,7 +22,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets_DOCS_APP_ID }}
+          client-id: ${{ secrets.DOCS_APP_ID }}
           private-key: ${{ secrets.DOCS_APP_KEY }}
           owner: ItzEmoji
           repositories: docs-test
