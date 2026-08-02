@@ -38,28 +38,26 @@ jobs:
       # while this one was queued, the pointer is the only thing that reflects
       # what docs has actually published; event.before would silently drop
       # every commit in between.
-      - name: Collect the commits being published
-        id: log
-        working-directory: docs/modules/test
-        run: |
-          set -euo pipefail
+        - name: Prepend the entry
+         id: entry
+          working-directory: docs
+          env:
+            SUBJECT: ${{ github.event.head_commit.message }}
+            AUTHOR: ${{ github.event.head_commit.author.name }}
+          run: |
+            set -euo pipefail
 
-          OLD="$(git rev-parse HEAD)"
-          git fetch origin "$GITHUB_SHA"
-          git checkout --detach "$GITHUB_SHA"
+            # head_commit.message carries the full body; keep the subject only.
+            SUBJECT="${SUBJECT%%$'\n'*}"
+            SHORT="${GITHUB_SHA:0:7}"
+            URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
 
-          if [ "$OLD" = "$GITHUB_SHA" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+            touch log.md
+            { echo "- \`$(date -u +%Y-%m-%d)\` [\`${SHORT}\`](${URL}) ${SUBJECT} — ${AUTHOR}"
+              cat log.md
+            } > log.md.new
+            mv log.md.new log.md
 
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "subject=test: ${OLD:0:7} -> ${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
-          {
-            echo 'body<<BODY'
-            git log --pretty='- %s (%h) — %an' "$OLD..$GITHUB_SHA"
-            echo BODY
-          } >> "$GITHUB_OUTPUT"
 
       - name: Open the pull request
         id: pr
