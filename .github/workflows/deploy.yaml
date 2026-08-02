@@ -13,8 +13,8 @@ jobs:
         with:
           app-id: ${{ vars.DOCS_APP_ID }}
           private-key: ${{ secrets.DOCS_APP_KEY }}
-          owner: my-org
-          repositories: monodocs
+          owner: itzemoji
+          repositories: docs-test
 
       - env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
