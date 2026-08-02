@@ -19,6 +19,8 @@ jobs:
       - env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
         run: |
+          gh api user --jq .login || echo "installation token (no user)"
+          gh api repos/itzemoji/docs-test --jq .permissions
           gh api repos/itzemoji/docs-test --input - <<EOF
           {
             "event_type": "submodule-updated",
