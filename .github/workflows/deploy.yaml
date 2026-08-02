@@ -8,10 +8,10 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/create-github-app-token@v2
+      - uses: actions/create-github-app-token@v3
         id: token
         with:
-          app-id: ${{ vars.DOCS_APP_ID }}
+          client-id: ${{ vars.DOCS_APP_ID }}
           private-key: ${{ secrets.DOCS_APP_KEY }}
           owner: itzemoji
           repositories: docs-test
