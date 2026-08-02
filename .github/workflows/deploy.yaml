@@ -46,7 +46,7 @@ jobs:
           # copy would leave every previous build's assets behind forever.
           rm -rf site/test
           mkdir -p site/test
-          cp -a build/. site/test/
+          cp -a website/build/. site/test/
 
           cd site
           git config user.name  "itzemoji-ci[bot]"
