@@ -1,0 +1,87 @@
+name: Bump docs submodule
+on:
+  push:
+    branches: [main]
+
+# Two pushes in quick succession would otherwise both read the same old
+# pointer and race on the same branch. Queue them instead of cancelling:
+# a run killed between "merge" and "delete-branch" leaves debris.
+concurrency:
+  group: bump-docs
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    # Every write goes through the App token scoped to docs.
+    permissions: {}
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ secrets.DOCS_APP_ID }}
+          private-key: ${{ secrets.DOCS_APP_KEY }}
+          owner: ItzEmoji
+          # If this repo is private the submodule clone below authenticates
+          # with the same token, so it has to be listed here as well.
+          repositories: docs
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ItzEmoji/docs
+          token: ${{ steps.app-token.outputs.token }}
+          path: docs
+          submodules: recursive
+
+      # The old SHA comes from the checked-out submodule pointer, not from
+      # github.event.before. If a previous run failed or several pushes landed
+      # while this one was queued, the pointer is the only thing that reflects
+      # what docs has actually published; event.before would silently drop
+      # every commit in between.
+      - name: Collect the commits being published
+        id: log
+        working-directory: docs/modules/test
+        run: |
+          set -euo pipefail
+
+          OLD="$(git rev-parse HEAD)"
+          git fetch origin "$GITHUB_SHA"
+          git checkout --detach "$GITHUB_SHA"
+
+          if [ "$OLD" = "$GITHUB_SHA" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "subject=test: ${OLD:0:7} -> ${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          {
+            echo 'body<<BODY'
+            git log --pretty='- %s (%h) — %an' "$OLD..$GITHUB_SHA"
+            echo BODY
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open the pull request
+        id: pr
+        if: ${{ steps.log.outputs.changed == 'true' }}
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          path: docs
+          base: main
+          branch: test/${{ github.sha }}
+          delete-branch: true
+          title: ${{ steps.log.outputs.subject }}
+          body: |
+            Automated submodule bump from [`${{ github.repository }}`][src].
+
+            ${{ steps.log.outputs.body }}
+
+            [src]: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+
+      - name: Merge the pull request
+        if: ${{ steps.pr.outputs.pull-request-number != '' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ steps.pr.outputs.pull-request-number }}
+        run: gh pr merge --repo ItzEmoji/docs --rebase --delete-branch "$PR"
