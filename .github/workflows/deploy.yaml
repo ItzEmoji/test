@@ -27,6 +27,22 @@ jobs:
           owner: ItzEmoji
           repositories: docs
 
+      # Author and committer must be the same identity, or GitHub renders the
+      # commit as "ItzEmoji and itzemoji-ci[bot]". The <id>+<slug>[bot]@... form
+      # is what links the commit to the bot account.
+      - name: Resolve the app's bot identity
+        id: bot
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+
+          user_id="$(gh api "/users/${SLUG}[bot]" --jq .id)"
+
+          echo "name=${SLUG}[bot]" >> "$GITHUB_OUTPUT"
+          echo "email=${user_id}+${SLUG}[bot]@users.noreply.github.com" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
         with:
           repository: ItzEmoji/docs
@@ -67,9 +83,16 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           path: docs
+          # Defaults are github.actor for author and github-actions[bot] for
+          # committer — two different people, hence the split attribution.
+          committer: ${{ steps.bot.outputs.name }} <${{ steps.bot.outputs.email }}>
+          author: ${{ steps.bot.outputs.name }} <${{ steps.bot.outputs.email }}>
           base: main
           branch: log/${{ github.sha }}
           delete-branch: true
+          # Without this the commit subject falls back to the action's
+          # "[create-pull-request] automated change".
+          commit-message: ${{ steps.entry.outputs.subject }}
           title: ${{ steps.entry.outputs.subject }}
           body: |
             Automated log entry from [`${{ github.repository }}`][src].
