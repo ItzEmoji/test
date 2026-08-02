@@ -1,10 +1,10 @@
-name: Publish to docs log
+name: Publish to docs-test log
 
 on:
   push:
     branches: [main]
 
-# Two pushes in quick succession would otherwise race on the docs checkout.
+# Two pushes in quick succession would otherwise race on the docs-test checkout.
 # Queue them instead of cancelling: a run killed between "merge" and
 # "delete-branch" leaves debris behind.
 concurrency:
@@ -14,7 +14,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Every write goes through the App token scoped to docs, so nothing here
+    # Every write goes through the App token scoped to docs-test, so nothing here
     # needs any permission on this repository.
     permissions: {}
     steps:
@@ -22,10 +22,10 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.DOCS_APP_ID }}
+          client-id: ${{ secrets_DOCS_APP_ID }}
           private-key: ${{ secrets.DOCS_APP_KEY }}
           owner: ItzEmoji
-          repositories: docs
+          repositories: docs-test
 
       # Author and committer must be the same identity, or GitHub renders the
       # commit as "ItzEmoji and itzemoji-ci[bot]". The <id>+<slug>[bot]@... form
@@ -45,14 +45,14 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          repository: ItzEmoji/docs
+          repository: ItzEmoji/docs-test
           token: ${{ steps.app-token.outputs.token }}
-          path: docs
+          path: docs-test
 
       # Newest first, so the interesting end of the file is the top.
       - name: Prepend the entry
         id: entry
-        working-directory: docs
+        working-directory: docs-test
         # Passed as env rather than interpolated into the script: a commit
         # message is attacker-controlled text and would otherwise be pasted
         # verbatim into the shell.
@@ -82,7 +82,7 @@ jobs:
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ steps.app-token.outputs.token }}
-          path: docs
+          path: docs-test
           # Defaults are github.actor for author and github-actions[bot] for
           # committer — two different people, hence the split attribution.
           committer: ${{ steps.bot.outputs.name }} <${{ steps.bot.outputs.email }}>
@@ -106,4 +106,4 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR: ${{ steps.pr.outputs.pull-request-number }}
-        run: gh pr merge --repo ItzEmoji/docs --rebase --delete-branch "$PR"
+        run: gh pr merge --repo ItzEmoji/docs-test --rebase --delete-branch "$PR"
