@@ -47,7 +47,7 @@ const config: Config = {
       title: 'Aeroflare',
       logo: {
         alt: 'Aeroflare Logo',
-        src: 'img/logo.svg',
+        src: 'test/img/logo.svg',
       },
       items: [
         {
