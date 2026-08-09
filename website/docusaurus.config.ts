@@ -7,7 +7,7 @@ const config: Config = {
   tagline: 'High-performance OCI-backed Nix binary cache proxy',
   favicon: 'img/favicon.svg',
   url: 'https://aeroflare.dev',
-  baseUrl: '/',
+  baseUrl: '/test',
   organizationName: 'aeroflare',
   projectName: 'aeroflare',
   onBrokenLinks: 'throw',
