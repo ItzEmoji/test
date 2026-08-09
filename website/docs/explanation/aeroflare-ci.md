@@ -1,0 +1,332 @@
+---
+sidebar_position: 4
+title: The aeroflare-ci Runner
+---
+
+# The `aeroflare-ci` Runner
+
+`aeroflare-ci` is a second binary, distinct from the interactive `aeroflare`
+CLI. It is non-interactive, single-shot, and does exactly one thing: build a set
+of Nix flake installables and push the results to one or more OCI caches.
+
+It knows nothing about GitHub. The GitHub Action is a thin wrapper that
+downloads this binary and translates action inputs into flags. Every capability
+the Action exposes is therefore reachable from any CI system, or from your
+laptop — see [GitHub Action](../how-to/github-action.md) for the Action itself,
+or [CI Integration](../how-to/ci-integration.md) for GitLab CI and generic
+runners.
+
+## The pipeline
+
+A single run performs six stages in order.
+
+1. **Resolve.** Merge the config file with flags and environment, apply
+   defaults, and validate. Nothing has happened yet; a bad config fails here.
+2. **Expand.** If — and only if — `builds` contains a sentinel entry, evaluate
+   the current flake and expand that entry into a concrete installable per
+   output: every one of them for `all`, and only those differing from the base
+   commit for `changed`. Every later stage sees an ordinary build list and
+   cannot tell the difference.
+3. **Substituter.** Start a local proxy on `127.0.0.1` that presents the
+   *primary* cache and every upstream to Nix as a binary cache.
+4. **Build.** Run `nix build <installable> --print-out-paths` once per entry,
+   with `extra-substituters` pointed at the proxy. Store paths are scraped from
+   stdout and deduplicated across installables.
+5. **Filter and prepare.** Tear the proxy down, drop the outputs and references
+   an upstream already serves, and archive what remains into NAR blobs exactly
+   once — regardless of how many caches will receive them.
+6. **Push.** Upload the prepared set to every cache in turn.
+
+Two consequences fall out of this shape. The prepared set is built once and
+reused, so adding a second cache costs upload bandwidth but no extra
+compression. And **every build is pushed to every cache**; there is no way to
+route one installable to one cache and another elsewhere.
+
+For what stages 5 and 6 skip, see [Incremental Caching](./incremental-caching.md).
+
+## Discovering builds
+
+Listing every package by hand is exactly the wrong job for a repository whose
+whole purpose is to publish packages — a NUR repo, most of all. The `all`
+sentinel in `builds` removes the list: it expands to every
+`packages.<system>.*`, `devShells.<system>.*` and `nixosConfigurations.<host>`
+the current flake exposes for the runner's system.
+
+Expansion happens in one `nix eval` of a single expression covering all three
+classes at once, rather than one evaluation per class. The reason is error
+handling: each class is read as `f.packages.${s} or {}`, so a flake that exposes
+no dev shells yields an empty list through the ordinary success path. Querying a
+missing output directly would instead make "this flake has no dev shells"
+indistinguishable from a genuine evaluation failure without pattern-matching
+Nix's stderr.
+
+The evaluation is impure, because `builtins.getFlake` against a local checkout
+is not a locked reference. That is confined to discovery; the builds it produces
+run exactly as a hand-written list would.
+
+Discovery does no filtering beyond the platform check on NixOS configurations.
+This is a real difference from the NUR template's `ci.nix`, which drops
+`meta.broken` and unfree packages before building. Reading flake outputs
+directly means a broken package is attempted and, per the runner's strict
+failure policy, fails the run. That is deliberate: a package that stopped
+building is something you want to see, not something to silently omit from your
+cache.
+
+## Building only what changed
+
+`all` solves the maintenance problem and creates a cost one: a repository of
+twenty packages rebuilds all twenty when a release bot bumps one version. The
+`changed` sentinel narrows that to the outputs a commit actually affected.
+
+It works by **comparing derivations, not files**. The same enumeration runs
+twice — once against the checkout, once against a throwaway `git worktree` of
+the base commit — and each output's `drvPath` is compared. A `.drv` hash covers
+its inputs transitively, so this catches a version bump, an edit to a shared
+helper function and a `flake.lock` update through one mechanism, with no
+knowledge of the repository's directory layout and no dependence on commit
+message conventions. Path-based and message-based approaches both need such
+assumptions, and both go quietly wrong when a change does not match the pattern
+they expect.
+
+The evaluation differs from discovery's in two ways. Each output is wrapped in
+`builtins.tryEval`, so a single package that fails to evaluate yields `null`
+rather than aborting the enumeration; and `builtins.unsafeDiscardStringContext`
+strips the string context a `drvPath` carries, which `--json` cannot serialise.
+
+Ambiguity is resolved towards building. An output that is new at HEAD is built,
+because a first appearance has nothing to compare against. An output that fails
+to evaluate at HEAD is also built, so `nix build` reports the real error instead
+of the run silently omitting a broken package. An output that disappeared is not
+built, there being nothing left to build.
+
+A worktree is used rather than stashing or `git show`, because evaluating the
+base needs its whole tree — `flake.nix`, `flake.lock` and every package file —
+on disk and undisturbed by whatever the working tree currently holds.
+
+### When the base does not evaluate
+
+A base commit that will not evaluate is a different thing from no base at all.
+It happens routinely: a commit that broke the flake, followed by the commit that
+fixes it. The fixing commit's base is the broken one, and no diff can be taken
+against a tree whose derivations cannot be read.
+
+The commit is not, however, the only tree that can answer the question. Its
+ancestry can, so the diff walks back — the base, then its first parent, and so
+on for up to ten commits — and uses the nearest commit that does evaluate. The
+line naming the base says so when this happens:
+
+```
+base 9af53f6 could not be evaluated, diffing against 495c068 instead
+changed  1 of 2 outputs differ from 495c068  (x86_64-linux)
+  .#packages.x86_64-linux.hello
+```
+
+An older base is a conservative one. Anything that changed in the commits walked
+over is still a difference from the older tree, so the walk can only widen the
+build set, never narrow it. Nor does it leave a hole in the cache: a commit
+skipped over is one whose flake does not evaluate, so its own build cannot have
+succeeded and there is nothing of it to have cached.
+
+This matters because the evaluation cannot be made partial. `tryEval` guards
+each output, but it catches only `throw` and `assert` — an attribute-missing or
+type error, a `callPacakge` typo being the canonical one, propagates and fails
+the evaluation whole. Isolating outputs one per evaluation would not help
+either: the usual NUR shape, `filterAttrs (_: isDerivation)`, forces every
+sibling in order to produce any single attribute, so one broken package there
+means no package evaluates. A tree is evaluatable or it is not.
+
+### When there is no base
+
+Several ordinary situations leave nothing to diff against: the first push to a
+branch, whose webhook reports an all-zero `before`; a shallow clone, which is
+what `actions/checkout` produces by default; a force-push that orphaned the old
+commit; and a base whose whole reachable ancestry fails to evaluate. None of
+these is a fault of the current run, so none is treated as an error by default.
+
+`on-missing-base` decides. The default, `all`, reports the reason and builds
+everything, because the failure modes are asymmetric: a job that over-builds is
+slow, while one that silently builds nothing leaves holes in the cache that
+surface later as cache misses. `error` and `none` are available for workflows
+that prefer a loud failure or a fast exit.
+
+## The primary cache
+
+The **first** entry in `caches` is the primary. It is not merely first among
+equals:
+
+- It backs the substituter in stage 2, so builds are accelerated by the primary
+  cache's contents and not by the others'.
+- Its token is resolved *before any build runs*. If it is missing, the run
+  aborts immediately rather than building for several minutes and then failing
+  to push.
+
+A missing token for any *other* cache is not fatal. That cache is skipped, the
+push is recorded as failed, remaining caches still receive the artifacts, and
+the process exits non-zero.
+
+Cache order is therefore meaningful. Put the cache you build against most often
+first.
+
+## Configuration resolution
+
+Three sources feed one `RunSpec`, in descending precedence:
+
+1. Command-line flags
+2. Environment variables
+3. The config file
+4. Built-in defaults
+
+The rule that catches people is what happens to lists.
+
+:::danger Lists replace, they do not merge
+An inline `builds`, `caches`, or `upstream-cache` **replaces** the config file's
+list wholesale. It never appends. Passing `--build .#foo` alongside a config
+file that lists three installables builds exactly one.
+
+This is why the GitHub Action refuses `config` together with `builds`/`cache`
+rather than quietly discarding the file's values.
+:::
+
+### Where each setting comes from
+
+| Setting | Flag | Environment variable | Config key | Default |
+|---|---|---|---|---|
+| Installables | `--build` (repeatable) | `AEROFLARE_CI_BUILDS` | `builds` | — (required) |
+| Push targets | `--cache` (repeatable) | `AEROFLARE_CI_CACHES` | `caches` | — (required) |
+| Config path | `--config` | `AEROFLARE_CI_CONFIG` | — | `.aeroflare-ci.yaml` |
+| Compression | `--compression` | `AEROFLARE_CI_COMPRESSION` | `compression` | `zstd` |
+| Signing key | `--signing-key` | `AEROFLARE_CI_SIGNING_KEY` | `signing-key` | unsigned |
+| Upstream caches | `--upstream-cache` (repeatable) | `AEROFLARE_CI_UPSTREAM_CACHE` | `upstream-cache` | `https://cache.nixos.org` |
+| Upload workers | `--workers` | — | `workers` | `50` |
+
+List-valued environment variables accept newline- **or** comma-separated
+entries, trimmed, with blanks discarded. `AEROFLARE_CI_BUILDS=".#a,.#b"` and a
+two-line value are equivalent.
+
+:::note
+`workers` is the one setting with no environment variable. In an
+environment-only deployment it can only be set via `--workers` or the config
+file.
+:::
+
+### The config file is optional, unless you name it
+
+`aeroflare-ci` always looks for `.aeroflare-ci.yaml` in the working directory.
+If it is absent, that is not an error — the run proceeds on flags and
+environment alone.
+
+Naming a *different* path makes the file mandatory, and a missing one is fatal:
+
+```console
+$ aeroflare-ci --config /nonexistent.yaml
+aeroflare-ci: open /nonexistent.yaml: no such file or directory
+$ echo $?
+1
+```
+
+Passing `--config .aeroflare-ci.yaml` explicitly is still treated as the default
+path, and so remains optional. The check compares the resolved path against the
+default string, not against whether the flag was supplied.
+
+## Token resolution
+
+Push tokens are read from the environment only. There is no flag, and no token
+ever appears in a config file.
+
+For a registry host, the variable name is the host uppercased with `.` and `:`
+replaced by `_`:
+
+| Registry | Environment variable |
+|---|---|
+| `ghcr.io` | `AEROFLARE_TOKEN_GHCR_IO` |
+| `docker.io` | `AEROFLARE_TOKEN_DOCKER_IO` |
+| `registry.gitlab.com` | `AEROFLARE_TOKEN_REGISTRY_GITLAB_COM` |
+| `localhost:5000` | `AEROFLARE_TOKEN_LOCALHOST_5000` |
+
+`ghcr.io` alone has a fallback: if `AEROFLARE_TOKEN_GHCR_IO` is unset,
+`GITHUB_TOKEN` is used. No other host has one.
+
+```console
+$ AEROFLARE_CI_BUILDS='.#default' AEROFLARE_CI_CACHES='ghcr.io;me/c' aeroflare-ci
+aeroflare-ci: 1 builds, 1 caches
+✗ no token for primary cache ghcr.io;me/c (set AEROFLARE_TOKEN_GHCR_IO)
+```
+
+### How the token is presented to the registry
+
+The token is a **password**, and it is always presented as one. Aeroflare does
+not inspect its shape, and there is no classification step: it hands the
+credential to the registry over Basic auth, and the registry hands back the
+short-lived Bearer token it wants to see on subsequent requests.
+
+That exchange is the standard Docker Registry v2 token flow, and Aeroflare does
+not implement it — [go-containerregistry][gcr] does. It pings `/v2/`, reads the
+`WWW-Authenticate` challenge to discover the realm and service (which need not
+be on the registry's own host: Docker Hub challenges `registry-1.docker.io`
+requests to a realm on `auth.docker.io`), requests the scopes the operation
+needs, and re-authenticates whenever the registry says the token has expired.
+A push large enough to outlive a token therefore still finishes.
+
+So a GitHub PAT (`ghp_`), an Actions token (`ghs_`), a GitLab job token, a
+Docker Hub PAT (`dckr_pat_`) and a self-hosted Harbor password all take exactly
+the same path. Any registry implementing the standard token flow works, with no
+per-registry code.
+
+The username is read from `AEROFLARE_USERNAME_<HOST>`, falling back to
+`AEROFLARE_GIT_USERNAME` and then to `token`. It matters only for registries
+that check it: GitLab expects `gitlab-ci-token` for a job token and Docker Hub
+expects the real account name, while `ghcr.io` ignores it entirely.
+
+[gcr]: https://github.com/google/go-containerregistry
+
+## Signing key resolution
+
+The `signing-key` setting is overloaded, and the order of interpretation is:
+
+1. If the value **names an environment variable that is set and non-empty**, the
+   contents of that variable are written to a `0600` temporary file, used, and
+   removed when the run ends.
+2. Otherwise the value is treated as a **filesystem path**.
+3. If it is neither, the run fails: `signing key "…" is neither a set env var nor
+   an existing file`.
+
+So `signing-key: NIX_SIGNING_KEY` reads the key material from
+`$NIX_SIGNING_KEY`, while `signing-key: ./key.sec` reads the file. The env var
+form is what you want in CI: the key never touches the working directory, and
+the temp file is unreadable by other users.
+
+Omit the setting entirely and NARs are pushed unsigned.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Every build and every push succeeded. |
+| `1` | Configuration error, or at least one build or push failed. |
+| `2` | Flag parsing failed, including `-h`. |
+
+A partial failure — three of four caches pushed — is exit `1`. The run does not
+abort on the first failure; it completes what it can and reports the tally.
+
+## Runtime requirements
+
+- **`nix` on `PATH`.** `aeroflare-ci` shells out to `nix build` and
+  `nix-store --dump`. It does not install Nix.
+- **Flakes enabled**, since installables are flake references.
+- **A trusted user.** The substituter is injected via `NIX_CONFIG` as
+  `extra-substituters`. The Nix daemon ignores that setting for untrusted users,
+  and the build silently falls back to rebuilding rather than substituting. It
+  still succeeds — just slowly.
+- The binary deliberately never sets `accept-flake-config`, which would trust
+  substituters and public keys declared by an arbitrary flake.
+
+The published release archives are Linux `x86_64` and `aarch64` only. Building
+from source through the flake works anywhere Go and Nix do; `aeroflare-ci` is
+one of the binaries in the default package's `bin/`.
+
+## Related
+
+- [GitHub Action](../how-to/github-action.md) — the Action itself
+- [CI Integration](../how-to/ci-integration.md) — GitLab CI and generic runners
+- [Incremental Caching](./incremental-caching.md) — what gets skipped, and why
+- [Architecture & Design](./architecture.md) — the wider system
